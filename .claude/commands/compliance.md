@@ -1,11 +1,17 @@
 ---
-description: Check the records against the rules this industry lives under (the ones listed in docs/compliance.md) and report what is missing, late, or about to breach, with the rule cited.
+description: "Check the records against the rules in docs/compliance.md: NLIS and NAIT transfers, NVDs, transaction levies, vendor settlement."
 ---
+# Compliance
 
-1. Read `docs/compliance.md`. Each rule has a name, the source it comes from, what a breach looks like in the data, and the SQL or command that finds it.
-2. Run each check. Use the CLI's `--json` output or a direct query through `scripts/lib/db.mjs`.
-3. Report as a table: rule, count, the worst example (name and days), the source. Order by severity: breached first, then due within 7 days, then clean.
-4. For anything breached, draft the fix the operator can approve: the record to update, the notice to send (draft to `drafts/`, never send), or the task to add.
-5. If a rule in `docs/compliance.md` is out of date, say so and stop. Do not guess at law. The operator confirms the rule, then you update the doc and the check together.
+Read CLAUDE.md and docs/compliance.md first. Use fresh data and run:
 
-Nothing here is legal advice. The doc records the rules the operator has told the system to enforce, with sources, and this command checks the data against them.
+```bash
+npm run agency -- compliance          # what to act on, then a count by rule
+npm run agency -- compliance --all    # every check, clean ones too
+```
+
+Report as a table: rule, state, the item, the detail, the source from docs/compliance.md. Breached first, then due. For each breach, say the fix and the command: a transfer done in the NLIS database then recorded with /transfer, an NVD copy sent then recorded with /nvd-sent, a vendor paid then /settle, a levy return lodged then /lodge-levy.
+
+If a rule in docs/compliance.md looks out of date (a levy rate changed, a state changed its transfer rule), say so and stop. Do not guess at law. The operator confirms the rule, then you update the doc and the check together with /customise.
+
+Nothing here is legal advice. Answer in plain language, tables for numbers, in the agency's currency. Ambiguous names list the candidates and exit 1: ask which one. Never invent a lot, a price, a weight, a buyer, a payment or an NVD number. Nothing here sends a message, moves money, lodges a levy return or records a transfer in the NLIS or NAIT database: drafts go to drafts/ and a person acts.

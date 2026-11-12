@@ -2,12 +2,65 @@
   {
     "name": "week",
     "title": "This week",
-    "subtitle": "Stock Agency for Claude Code: what needs attention, rendered by npm run view",
+    "subtitle": "Stock Agency for Claude Code: what needs a decision, rendered by npm run view",
     "sections": [
       {
         "title": "Needs attention",
-        "note": "TODO(author): point this at the industry's attention view (overdue, stuck, quiet).",
-        "sql": "select 'replace me' as item, 'TODO(author)' as why"
+        "note": "NVDs not in, lots with no result, sales not closed, transfers, vendors to pay, buyers overdue, levy returns.",
+        "sql": "select reason, ref, coalesce(client, '') as client, detail from v_attention order by severity, reason, ref"
+      },
+      {
+        "title": "Coming sales",
+        "sql": "select s.sale_date as date, s.name as sale, count(c.id) as consignments, coalesce(sum(c.head_booked), 0) as \"head booked\", count(c.id) filter (where c.nvd_number is null) as \"NVDs missing\" from sales s left join consignments c on c.sale_id = s.id where s.status = 'booking' and s.sale_date >= agency_today() group by s.id order by s.sale_date"
+      },
+      {
+        "title": "Transfers to record",
+        "sql": "select state, scheme, sale, lot_no as lot, head, vendor_pic as \"from\", coalesce(buyer_pic, '') as \"to\", due_on as due from v_transfers where state in ('due', 'overdue') order by due_on"
+      }
+    ]
+  },
+  {
+    "name": "money",
+    "title": "Money in and out",
+    "subtitle": "Vendor proceeds to pay and buyers who owe",
+    "sections": [
+      {
+        "title": "Vendor proceeds to pay",
+        "sql": "select number, vendor, sale, round(net_cents / 100.0, 2) as net, due_on as due, days_late as \"days late\" from v_settlements where paid_on is null order by due_on"
+      },
+      {
+        "title": "Buyers owing",
+        "sql": "select buyer, round(owing_cents / 100.0, 2) as owing, round(overdue_1_14_cents / 100.0, 2) as \"1 to 14 days\", round(overdue_15_30_cents / 100.0, 2) as \"15 to 30 days\", round(overdue_30_plus_cents / 100.0, 2) as \"over 30 days\", round(credit_limit_cents / 100.0, 2) as \"limit\", coalesce(insured_until::text, '') as \"insured until\", on_stop as \"on stop\" from v_debtors order by owing_cents desc"
+      },
+      {
+        "title": "Levies held",
+        "sql": "select to_char(v.month, 'YYYY-MM') as month, v.label, v.head, round(v.levy_cents / 100.0, 2) as levy, coalesce(r.lodged_on::text, 'not lodged') as lodged from v_levies v left join levy_returns r on r.month = v.month order by v.month desc, v.label"
+      }
+    ]
+  },
+  {
+    "name": "compliance",
+    "title": "Compliance",
+    "subtitle": "The rules in docs/compliance.md checked against the records",
+    "sections": [
+      {
+        "title": "To act on",
+        "sql": "select rule, state, item, detail from v_compliance where state <> 'clean' order by case state when 'breached' then 0 else 1 end, rule, item"
+      },
+      {
+        "title": "By rule",
+        "sql": "select rule, count(*) filter (where state = 'clean') as clean, count(*) filter (where state = 'due') as due, count(*) filter (where state = 'breached') as breached from v_compliance group by rule order by rule"
+      }
+    ]
+  },
+  {
+    "name": "market",
+    "title": "Market",
+    "subtitle": "What each category made at the last six weeks of sales",
+    "sections": [
+      {
+        "title": "By sale and category",
+        "sql": "select sale_date as date, sale, category, head, avg_kg as \"avg kg\", avg_c_per_kg as \"avg c/kg\", top_c_per_kg as \"top c/kg\", avg_dollars_per_head as \"avg $/hd\" from v_market where sale_date >= agency_today() - 42 order by sale_date desc, head desc"
       }
     ]
   }

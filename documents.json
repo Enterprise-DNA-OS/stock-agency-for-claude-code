@@ -1,11 +1,68 @@
 [
   {
-    "name": "example",
-    "title": "TODO(author): the first document this industry must produce",
-    "for_each": "select gen_random_uuid() as id, 'Example' as name",
+    "name": "account-sale",
+    "title": "Account sale",
+    "for_each": "select a.id, a.number || ' ' || c.name as name from account_sales a join clients c on c.id = a.vendor_id join sales s on s.id = a.sale_id where s.sale_date >= agency_today() - 21 order by a.number",
     "file": "name",
     "sections": [
-      { "title": "Details", "sql": "select 'replace me' as item, $1::text as record_id" }
+      {
+        "title": "Account sale",
+        "layout": "record",
+        "sql": "select a.number as \"account sale\", st.business_name as \"agent\", st.agency_code as \"agent code\", c.name as \"vendor\", coalesce(c.tax_no, '') as \"ABN\", coalesce(p.pic, '') as \"PIC\", s.name as \"sale\", s.sale_date as \"sale date\", coalesce(s.saleyard, 'private sale') as \"saleyard\", a.head, a.due_on as \"settlement day\", coalesce(a.paid_on::text, 'not paid yet') as \"paid\" from account_sales a join clients c on c.id = a.vendor_id join sales s on s.id = a.sale_id cross join settings st left join lateral (select pic from properties where client_id = c.id order by created_at limit 1) p on true where a.id = $1"
+      },
+      {
+        "title": "Your stock",
+        "sql": "select l.lot_no as lot, l.head, l.category, coalesce(l.avg_kg::text, '') as \"avg kg\", case when l.basis = 'kg' then round(l.price_cents, 1) || 'c/kg' else '$' || round(l.price_cents / 100.0, 2) || '/hd' end as price, round(l.per_head_cents / 100, 2) as \"$/head\", l.buyer, round(l.gross_cents / 100.0, 2) as gross from v_lots l join account_sales a on a.sale_id = l.sale_id and a.vendor_id = l.vendor_id where a.id = $1 and l.status = 'sold' order by (case when l.lot_no ~ '^[0-9]+$' then l.lot_no::int end), l.lot_no"
+      },
+      {
+        "title": "Charges",
+        "note": "Commission and yard dues carry GST. Transaction levies carry none and are paid to the government on our levy return.",
+        "sql": "select label as charge, sum(head)::int as head, round(sum(amount_cents) / 100.0, 2) as amount, round(sum(gst_cents) / 100.0, 2) as gst, round(sum(amount_cents + gst_cents) / 100.0, 2) as total from account_sale_lines where account_sale_id = $1 group by label, kind order by case kind when 'commission' then 0 when 'fee' then 1 else 2 end, label"
+      },
+      {
+        "title": "Proceeds",
+        "layout": "record",
+        "sql": "select round(gross_cents / 100.0, 2) as \"gross\", round(gst_cents / 100.0, 2) as \"GST on stock\", round(charges_cents / 100.0, 2) as \"less charges\", round(net_cents / 100.0, 2) as \"net proceeds to you\" from account_sales where id = $1"
+      }
+    ]
+  },
+  {
+    "name": "buyer-invoice",
+    "title": "Tax invoice: livestock purchased",
+    "for_each": "select i.id, i.number || ' ' || c.name as name from buyer_invoices i join clients c on c.id = i.buyer_id join sales s on s.id = i.sale_id where s.sale_date >= agency_today() - 21 order by i.number",
+    "file": "name",
+    "sections": [
+      {
+        "title": "Invoice",
+        "layout": "record",
+        "sql": "select i.number as \"invoice\", st.business_name as \"from\", c.name as \"to\", coalesce(c.tax_no, '') as \"ABN\", s.name as \"sale\", s.sale_date as \"sale date\", i.head, i.due_on as \"due\", round(v.balance_cents / 100.0, 2) as \"balance owing\" from buyer_invoices i join clients c on c.id = i.buyer_id join sales s on s.id = i.sale_id join v_invoices v on v.id = i.id cross join settings st where i.id = $1"
+      },
+      {
+        "title": "Stock bought",
+        "sql": "select l.lot_no as lot, l.vendor, l.vendor_pic as \"from PIC\", coalesce(l.buyer_pic, '') as \"to PIC\", l.head, l.category, coalesce(l.avg_kg::text, '') as \"avg kg\", case when l.basis = 'kg' then round(l.price_cents, 1) || 'c/kg' else '$' || round(l.price_cents / 100.0, 2) || '/hd' end as price, round(l.gross_cents / 100.0, 2) as amount from v_lots l join buyer_invoices i on i.sale_id = l.sale_id and i.buyer_id = l.buyer_id where i.id = $1 and l.status = 'sold' order by (case when l.lot_no ~ '^[0-9]+$' then l.lot_no::int end), l.lot_no"
+      },
+      {
+        "title": "Total",
+        "layout": "record",
+        "sql": "select round(gross_cents / 100.0, 2) as \"stock\", round(gst_cents / 100.0, 2) as \"GST\", round(total_cents / 100.0, 2) as \"total\" from buyer_invoices where id = $1"
+      }
+    ]
+  },
+  {
+    "name": "market-report",
+    "title": "Market report",
+    "for_each": "select s.id, s.name from sales s where s.sale_date between agency_today() - 21 and agency_today() and exists (select 1 from lots l where l.sale_id = s.id and l.status = 'sold') order by s.sale_date",
+    "file": "name",
+    "sections": [
+      {
+        "title": "The sale",
+        "layout": "record",
+        "sql": "select s.name as sale, s.sale_date as date, coalesce(s.saleyard, '') as saleyard, (select sum(head) from lots where sale_id = s.id and status = 'sold') as \"head sold\", (select count(*) from lots where sale_id = s.id and status = 'passed_in') as \"lots passed in\" from sales s where s.id = $1"
+      },
+      {
+        "title": "By category",
+        "sql": "select category, head, avg_kg as \"avg kg\", avg_c_per_kg as \"avg c/kg\", low_c_per_kg as \"low c/kg\", top_c_per_kg as \"top c/kg\", avg_dollars_per_head as \"avg $/hd\", top_dollars_per_head as \"top $/hd\" from v_market where sale_id = $1 order by head desc"
+      }
     ]
   }
 ]
